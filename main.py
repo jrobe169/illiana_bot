@@ -21,6 +21,8 @@ def is_affirmation(text):
     return any(phrase in text.lower() for phrase in ["i affirm", "affirm", "i agree"]) or "👍" in text
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("💬 Received message:", update.message.text)
+
     message = update.message
     if not message or not message.text:
         return
@@ -37,7 +39,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             writer.writerow([timestamp, user.full_name, user.id, message.text])
 
         await message.reply_text(f"🕊️ Affirmation received, {user.first_name}. Welcome to the flow of ILLIANA.")
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id == OWNER_ID:
         await update.message.reply_text("🔐 ILLIANA Bot activated.")
