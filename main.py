@@ -15,8 +15,6 @@ OWNER_ID = int(os.getenv("OWNER_ID"))
 CSV_LOG = "affirmations_log.csv"
 
 # === TELEGRAM SETUP ===
-print("BOT_TOKEN:", BOT_TOKEN)
-print("OWNER_ID:", OWNER_ID)
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 def is_affirmation(text):
@@ -66,4 +64,8 @@ async def run_bot():
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
-    asyncio.run(run_bot())
+
+    # 🔥 THIS IS THE FIX: Use the already-running event loop
+    loop = asyncio.get_event_loop()
+    loop.create_task(run_bot())
+    loop.run_forever()
