@@ -57,15 +57,23 @@ def home():
 def run_flask():
     flask_app.run(host="0.0.0.0", port=10000)
 
-async def run_bot():
+async def run_bot_forever():
     await telegram_app.initialize()
     await telegram_app.start()
-    await telegram_app.run_polling()
+    print("🤖 Bot started.")
+    # This replaces run_polling()
+    await telegram_app.bot.set_my_commands([
+        ("start", "Activate the bot"),
+    ])
+    # Let the bot idle forever
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
+    # Start Flask server in background
     Thread(target=run_flask).start()
 
-    # 🔥 THIS IS THE FIX: Use the already-running event loop
+    # Start Telegram bot without run_polling()
     loop = asyncio.get_event_loop()
-    loop.create_task(run_bot())
+    loop.create_task(run_bot_forever())
     loop.run_forever()
