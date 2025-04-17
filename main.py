@@ -1,10 +1,10 @@
-
 import logging
 import os
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters
 from datetime import datetime
-from flask import Flask, request
+from flask import Flask
 
 # === CONFIG ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -12,7 +12,7 @@ OWNER_ID = int(os.getenv("OWNER_ID"))
 LOG_FILE = "affirmations_log.txt"
 
 # === TELEGRAM SETUP ===
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 def is_affirmation(text):
     return any(phrase in text.lower() for phrase in ["i affirm", "affirm", "i agree"]) or "👍" in text
@@ -38,8 +38,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("⛔ You do not have permission to use this command.")
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT, handle_message))
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
 # === FLASK SETUP FOR RENDER DEPLOYMENT ===
 flask_app = Flask(__name__)
@@ -48,11 +48,17 @@ flask_app = Flask(__name__)
 def home():
     return "ILLIANA Affirmation Bot is running."
 
-@flask_app.route("/start-bot")
-def start_bot():
-    import threading
-    threading.Thread(target=lambda: app.run_polling()).start()
-    return "Bot started!"
+async def run_all():
+    await telegram_app.initialize()
+    await telegram_app.start()
+    await telegram_app.updater.start_polling()
+    # Keep alive
+    await telegram_app.updater.idle()
 
 if __name__ == "__main__":
-    flask_app.run(host="0.0.0.0", port=10000)
+    # Start Flask in a separate thread
+    from threading import Thread
+    Thread(target=lambda: flask_app.run(host="0.0.0.0", port=10000)).start()
+
+    # Run the Telegram bot in main thread using asyncio
+    asyncio.run(run_all())
