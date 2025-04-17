@@ -21,8 +21,7 @@ def is_affirmation(text):
     return any(phrase in text.lower() for phrase in ["i affirm", "affirm", "i agree"]) or "👍" in text
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("💬 Received message:", update.message.text)
-
+    print("💬 Received message:", update.message.text)  # Log incoming messages
     message = update.message
     if not message or not message.text:
         return
@@ -39,7 +38,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             writer.writerow([timestamp, user.full_name, user.id, message.text])
 
         await message.reply_text(f"🕊️ Affirmation received, {user.first_name}. Welcome to the flow of ILLIANA.")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("📥 /start received from:", update.effective_user.id)
     if update.effective_user.id == OWNER_ID:
         await update.message.reply_text("🔐 ILLIANA Bot activated.")
     else:
@@ -58,23 +59,14 @@ def home():
 def run_flask():
     flask_app.run(host="0.0.0.0", port=10000)
 
-async def run_bot_forever():
+async def run_bot():
     await telegram_app.initialize()
     await telegram_app.start()
-    print("🤖 Bot started.")
-    # This replaces run_polling()
-    await telegram_app.bot.set_my_commands([
-        ("start", "Activate the bot"),
-    ])
-    # Let the bot idle forever
-    while True:
-        await asyncio.sleep(3600)
+    print("✅ Telegram bot started.")
+    await telegram_app.updater.start_polling()  # keeps polling running
+    await telegram_app.updater.wait()  # keep alive
 
 if __name__ == "__main__":
-    # Start Flask server in background
     Thread(target=run_flask).start()
-
-    # Start Telegram bot without run_polling()
-    loop = asyncio.get_event_loop()
-    loop.create_task(run_bot_forever())
-    loop.run_forever()
+    asyncio.get_event_loop().create_task(run_bot())
+    asyncio.get_event_loop().run_forever()
