@@ -21,7 +21,6 @@ def is_affirmation(text):
     return any(phrase in text.lower() for phrase in ["i affirm", "affirm", "i agree"]) or "👍" in text
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("💬 Received message:", update.message.text)
     message = update.message
     if not message or not message.text:
         return
@@ -43,7 +42,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("📥 /start received from:", update.effective_user.id)
     if update.effective_user.id == OWNER_ID:
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -68,13 +66,12 @@ def home():
 def run_flask():
     flask_app.run(host="0.0.0.0", port=10000)
 
-async def run_bot():
+async def run_telegram():
     await telegram_app.initialize()
     await telegram_app.start()
-    print("✅ Telegram bot started.")
-    await telegram_app.updater.start_polling()
+    await telegram_app.updater.start_polling()  # start polling loop
+    await telegram_app.updater.wait()  # wait for shutdown
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
-    asyncio.get_event_loop().create_task(run_bot())
-    asyncio.get_event_loop().run_forever()
+    asyncio.run(run_telegram())
