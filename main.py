@@ -1,66 +1,80 @@
-import logging
-from telegram import Update, ChatMemberUpdated
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters,
-    ChatMemberHandler
-)
-from datetime import datetime, timedelta
-import asyncio
 import os
+import logging
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = os.getenv("BOT_TOKEN")
-user_affirmed = {}
+BOT_USERNAME = "AffirmWithAegisBot"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # example: https://your-app.onrender.com/webhook
+PORT = int(os.environ.get("PORT", 10000))
+
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=TOKEN)
+
+# Track affirmations and join time
+affirmed_users = set()
 join_times = {}
 
-logging.basicConfig(level=logging.INFO)
+# Create telegram app with webhook
+telegram_app = Application.builder().token(TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔐 ILLIANA Bot activated.")
+    await update.message.reply_text("🔐 ILLIANA Bot activated. Type 'I affirm' or 👍 to affirm.")
 
-async def handle_affirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    chat_id = update.effective_chat.id
+    message_text = update.message.text.lower() if update.message.text else ""
 
-    if user and any(trigger in update.message.text.lower() for trigger in ["i affirm", "i agree", "affirm", "👍"]):
-        user_affirmed[user.id] = True
-        await update.message.reply_text(
-            f"🕊️ Affirmation received, {user.first_name}. Welcome to the flow of ILLIANA."
-        )
+    if any(x in message_text for x in ["i affirm", "affirm", "i agree"]) or '👍' in message_text:
+        affirmed_users.add(user.id)
+        await update.message.reply_text(f"🕊️ Affirmation received, {user.first_name}. Welcome to the flow of ILLIANA.")
 
-async def track_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    result = update.chat_member
-    status_change = result.difference()
+@telegram_app.chat_member_handler()
+async def track_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_member = update.chat_member
+    if chat_member.new_chat_member.status == 'member':
+        user_id = chat_member.from_user.id
+        join_times[user_id] = context.application.job_queue.run_once(remove_unaffirmed_user, 600, data={
+            "chat_id": chat_member.chat.id,
+            "user_id": user_id
+        })
 
-    if status_change is None:
-        return
+async def remove_unaffirmed_user(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.data["chat_id"]
+    user_id = context.job.data["user_id"]
 
-    if result.new_chat_member.status == "member":
-        user = result.new_chat_member.user
-        join_times[user.id] = datetime.utcnow()
-        user_affirmed[user.id] = False
+    if user_id not in affirmed_users:
+        try:
+            await context.bot.ban_chat_member(chat_id, user_id)
+            await context.bot.unban_chat_member(chat_id, user_id)
+            logging.info(f"User {user_id} removed for not affirming within 10 minutes.")
+        except Exception as e:
+            logging.error(f"Failed to remove user {user_id}: {e}")
 
-        logging.info(f"Tracking {user.first_name} ({user.id}) for affirmation")
+# Register handlers
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-        await asyncio.sleep(600)  # 10 minutes
+@app.route("/")
+def index():
+    return "Bot is running."
 
-        if not user_affirmed.get(user.id, False):
-            try:
-                await context.bot.send_message(
-                    chat_id=update.chat_member.chat.id,
-                    text=f"⏳ {user.first_name}, you were invited into the flow but didn’t affirm. Please return when you're ready. 🙏"
-                )
-                await context.bot.ban_chat_member(update.chat_member.chat.id, user.id)
-                await context.bot.unban_chat_member(update.chat_member.chat.id, user.id)  # Optional: allows rejoin
-                logging.info(f"Removed {user.first_name} ({user.id}) for not affirming in time.")
-            except Exception as e:
-                logging.error(f"Failed to remove user: {e}")
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    telegram_app.update_queue.put_nowait(update)
+    return "OK"
+
+async def setup():
+    await telegram_app.initialize()
+    await bot.delete_webhook()
+    await bot.set_webhook(url=WEBHOOK_URL)
+    await telegram_app.start()
+    logging.info("Bot is ready via webhook.")
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_affirmation))
-    app.add_handler(ChatMemberHandler(track_new_members, ChatMemberHandler.CHAT_MEMBER))
-
-    logging.info("Bot is starting...")
-    app.run_polling()
+    import asyncio
+    asyncio.run(setup())
+    app.run(host="0.0.0.0", port=PORT)
