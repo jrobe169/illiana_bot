@@ -1,21 +1,23 @@
 import logging
 import os
-import asyncio
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters
+import csv
+from pathlib import Path
 from datetime import datetime
 from flask import Flask
 from threading import Thread
-import csv
-from pathlib import Path
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters
 
 # === CONFIG ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 CSV_LOG = "affirmations_log.csv"
 
-# === TELEGRAM SETUP ===
-telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+# === LOGGING ===
+logging.basicConfig(level=logging.INFO)
+
+# === TELEGRAM APP ===
+app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 def is_affirmation(text):
     return any(phrase in text.lower() for phrase in ["i affirm", "affirm", "i agree"]) or "👍" in text
@@ -43,35 +45,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id == OWNER_ID:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="🔐 ILLIANA Bot activated."
-        )
+        await update.message.reply_text("🔐 ILLIANA Bot activated.")
     else:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="⛔ You do not have permission to use this command."
-        )
+        await update.message.reply_text("⛔ You do not have permission to use this command.")
 
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(MessageHandler(filters.TEXT, handle_message))
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-# === FLASK SETUP ===
+# === FLASK SERVER FOR KEEP-ALIVE ===
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
-def home():
+def index():
     return "ILLIANA Bot is running."
 
 def run_flask():
     flask_app.run(host="0.0.0.0", port=10000)
 
-async def run_telegram():
-    await telegram_app.initialize()
-    await telegram_app.start()
-    await telegram_app.updater.start_polling()  # start polling loop
-    await telegram_app.updater.wait()  # wait for shutdown
+# === RUN BOT ===
+def run_bot():
+    app.run_polling()
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
-    asyncio.run(run_telegram())
+    run_bot()
