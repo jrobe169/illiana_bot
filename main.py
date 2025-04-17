@@ -15,6 +15,8 @@ OWNER_ID = int(os.getenv("OWNER_ID"))
 CSV_LOG = "affirmations_log.csv"
 
 # === TELEGRAM SETUP ===
+print("BOT_TOKEN:", BOT_TOKEN)
+print("OWNER_ID:", OWNER_ID)
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 def is_affirmation(text):
