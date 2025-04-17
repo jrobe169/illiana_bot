@@ -21,7 +21,7 @@ def is_affirmation(text):
     return any(phrase in text.lower() for phrase in ["i affirm", "affirm", "i agree"]) or "👍" in text
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("💬 Received message:", update.message.text)  # Log incoming messages
+    print("💬 Received message:", update.message.text)
     message = update.message
     if not message or not message.text:
         return
@@ -37,14 +37,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 writer.writerow(["Timestamp", "Name", "User ID", "Affirmation"])
             writer.writerow([timestamp, user.full_name, user.id, message.text])
 
-        await message.reply_text(f"🕊️ Affirmation received, {user.first_name}. Welcome to the flow of ILLIANA.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"🕊️ Affirmation received, {user.first_name}. Welcome to the flow of ILLIANA."
+        )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("📥 /start received from:", update.effective_user.id)
     if update.effective_user.id == OWNER_ID:
-        await update.message.reply_text("🔐 ILLIANA Bot activated.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="🔐 ILLIANA Bot activated."
+        )
     else:
-        await update.message.reply_text("⛔ You do not have permission to use this command.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="⛔ You do not have permission to use this command."
+        )
 
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT, handle_message))
@@ -63,8 +72,7 @@ async def run_bot():
     await telegram_app.initialize()
     await telegram_app.start()
     print("✅ Telegram bot started.")
-    await telegram_app.updater.start_polling()  # keeps polling running
-    await telegram_app.updater.wait()  # keep alive
+    await telegram_app.updater.start_polling()
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
