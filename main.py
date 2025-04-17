@@ -10,8 +10,8 @@ import csv
 from pathlib import Path
 
 # === CONFIG ===
-BOT_TOKEN = os.getenv("7895583843:AAHKPA7BXtLCZYwWLOlQ1Cb987Uy_7WjZRk")
-OWNER_ID = int(os.getenv("7229203098"))
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OWNER_ID = int(os.getenv("OWNER_ID"))
 CSV_LOG = "affirmations_log.csv"
 
 # === TELEGRAM SETUP ===
