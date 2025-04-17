@@ -1,92 +1,98 @@
 import logging
+import os
 import asyncio
 from datetime import datetime, timedelta
-
-from flask import Flask
 from telegram import Update, ChatMember
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
     filters,
     ContextTypes,
-    ChatMemberHandler,
+    ChatMemberHandler
 )
+from flask import Flask
 
-TOKEN = "YOUR_BOT_TOKEN"  # Replace with your bot token
-GROUP_ID = -1001234567890  # Replace with your actual group ID
-
-affirmation_keywords = {"i affirm", "affirm", "i agree", "👍"}
-user_join_times = {}
-
+# Logging
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-telegram_app = ApplicationBuilder().token(TOKEN).build()
+# Telegram Bot Token
+TOKEN = os.getenv("BOT_TOKEN", "your-telegram-bot-token")
+GROUP_ID = -1002116956436  # Replace with your actual group ID
+
+# Track members and affirmations
+joined_users = {}
+
+# Affirmation keywords
+AFFIRM_KEYWORDS = ["i affirm", "affirm", "i agree", "👍"]
+
+# Flask app for Render.com keep-alive
 flask_app = Flask(__name__)
-
-
-# --- Telegram Bot Logic --- #
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔐 ILLIANA Bot activated.")
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    user = message.from_user
-    user_id = user.id
-    text = message.text.lower().strip()
-
-    if any(keyword in text for keyword in affirmation_keywords):
-        logging.info(f"Affirmation received from {user.full_name}")
-        await message.reply_text(
-            f"🕊️ Affirmation received, {user.first_name}. Welcome to the flow of ILLIANA."
-        )
-        user_join_times.pop(user_id, None)
-    else:
-        logging.info(f"Message received from {user.full_name}: {message.text}")
-
-
-async def track_user_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    result: ChatMember = update.chat_member
-    new_status = result.new_chat_member.status
-    user = result.new_chat_member.user
-    user_id = user.id
-
-    if new_status == "member":
-        logging.info(f"{user.full_name} joined the group.")
-        user_join_times[user_id] = datetime.utcnow()
-
-
-async def check_unaffirmed_users():
-    while True:
-        await asyncio.sleep(60)  # Run every minute
-        now = datetime.utcnow()
-        for user_id, join_time in list(user_join_times.items()):
-            if now - join_time > timedelta(minutes=10):
-                try:
-                    await telegram_app.bot.ban_chat_member(chat_id=GROUP_ID, user_id=user_id)
-                    await telegram_app.bot.unban_chat_member(chat_id=GROUP_ID, user_id=user_id)
-                    logging.info(f"Removed {user_id} for not affirming.")
-                    user_join_times.pop(user_id, None)
-                except Exception as e:
-                    logging.error(f"Failed to remove user {user_id}: {e}")
-
 
 @flask_app.route("/")
 def index():
-    return "ILLiANA Bot is running."
+    return "Bot is running!"
 
+# Message handler
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_text = update.message.text.lower().strip()
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
 
-def main():
-    telegram_app.add_handler(CommandHandler("start", start))
+    if chat_id != GROUP_ID:
+        return
+
+    if any(kw in message_text for kw in AFFIRM_KEYWORDS):
+        username = update.effective_user.username or update.effective_user.full_name
+        await update.message.reply_text(f"🕊️ Welcome {username}! Your affirmation has been recorded.")
+        joined_users.pop(user_id, None)
+        logger.info(f"{username} affirmed.")
+
+# New member joins
+async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_member: ChatMember = update.chat_member
+    if chat_member.new_chat_member.status == "member":
+        user_id = chat_member.from_user.id
+        username = chat_member.from_user.username or chat_member.from_user.full_name
+        join_time = datetime.now()
+        joined_users[user_id] = join_time
+        logger.info(f"{username} joined the group.")
+        await context.bot.send_message(
+            chat_id=GROUP_ID,
+            text=f"👋 Welcome {username}! Please affirm your participation by typing 'I Affirm', 'Affirm', 'I Agree', or sending 👍."
+        )
+
+# Periodic check
+async def check_for_unaffirmed(app: Application):
+    while True:
+        now = datetime.now()
+        to_remove = [user_id for user_id, join_time in joined_users.items() if now - join_time > timedelta(minutes=10)]
+        for user_id in to_remove:
+            try:
+                await app.bot.ban_chat_member(chat_id=GROUP_ID, user_id=user_id)
+                await app.bot.unban_chat_member(chat_id=GROUP_ID, user_id=user_id)
+                logger.info(f"Removed user {user_id} for not affirming.")
+                del joined_users[user_id]
+            except Exception as e:
+                logger.error(f"Failed to remove user {user_id}: {e}")
+        await asyncio.sleep(60)
+
+# Main async run
+async def run_bot():
+    telegram_app = Application.builder().token(TOKEN).build()
+
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    telegram_app.add_handler(ChatMemberHandler(track_user_join, ChatMemberHandler.CHAT_MEMBER))
+    telegram_app.add_handler(ChatMemberHandler(handle_new_member, ChatMemberHandler.CHAT_MEMBER))
 
-    telegram_app.run_polling(non_stop=True)
+    asyncio.create_task(check_for_unaffirmed(telegram_app))
+    await telegram_app.run_polling()
 
+# Start everything
+def main():
+    import threading
+    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=10000)).start()
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(check_unaffirmed_users())
     main()
